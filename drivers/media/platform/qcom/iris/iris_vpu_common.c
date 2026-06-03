@@ -63,7 +63,7 @@ static void iris_vpu_setup_ucregion_memory_map(struct iris_core *core)
 	writel(QTBL_ENABLE, core->reg_base + QTBL_INFO);
 
 	if (core->sfr_daddr) {
-		value = (u32)core->sfr_daddr + core->iris_platform_data->core_arch;
+		value = (u32)core->sfr_daddr + core->iris_firmware_data->core_arch;
 		writel(value, core->reg_base + SFR_ADDR);
 	}
 
@@ -149,7 +149,7 @@ int iris_vpu_prepare_pc(struct iris_core *core)
 	if (!wfi_status || !idle_status)
 		goto skip_power_off;
 
-	ret = core->hfi_ops->sys_pc_prep(core);
+	ret = core->hfi_sys_ops->sys_pc_prep(core);
 	if (ret)
 		goto skip_power_off;
 
@@ -297,14 +297,8 @@ int iris_vpu_power_on_hw(struct iris_core *core)
 	if (ret && ret != -ENOENT)
 		goto err_disable_hw_ahb_clock;
 
-	ret = dev_pm_genpd_set_hwmode(core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN], true);
-	if (ret)
-		goto err_disable_bse_hw_clock;
-
 	return 0;
 
-err_disable_bse_hw_clock:
-	iris_disable_unprepare_clock(core, IRIS_BSE_HW_CLK);
 err_disable_hw_ahb_clock:
 	iris_disable_unprepare_clock(core, IRIS_HW_AHB_CLK);
 err_disable_hw_clock:
@@ -313,6 +307,16 @@ err_disable_power:
 	iris_disable_power_domains(core, core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN]);
 
 	return ret;
+}
+
+int iris_vpu_set_hwmode(struct iris_core *core)
+{
+	return dev_pm_genpd_set_hwmode(core->pmdomain_tbl->pd_devs[IRIS_HW_POWER_DOMAIN], true);
+}
+
+int iris_vpu_switch_to_hwmode(struct iris_core *core)
+{
+	return core->iris_platform_data->vpu_ops->set_hwmode(core);
 }
 
 int iris_vpu35_vpu4x_power_off_controller(struct iris_core *core)
@@ -479,7 +483,7 @@ int iris_vpu_power_on(struct iris_core *core)
 
 	iris_opp_set_rate(core->dev, freq);
 
-	core->iris_platform_data->set_preset_registers(core);
+	iris_vpu_set_preset_registers(core);
 
 	iris_vpu_interrupt_init(core);
 	core->intr_status = 0;
@@ -495,4 +499,9 @@ err:
 	dev_err(core->dev, "power on failed\n");
 
 	return ret;
+}
+
+void iris_vpu_set_preset_registers(struct iris_core *core)
+{
+	writel(0x0, core->reg_base + 0xb0088);
 }
